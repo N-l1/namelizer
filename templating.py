@@ -15,8 +15,8 @@ def get_weather(dt, lat, lon, appid):
 
 def get_location(activity):
     geocoder = Nominatim(user_agent="namelizer")
-    return(geocoder.reverse(activity["start_latlng"].raw["address"]),
-           geocoder.reverse(activity["end_latlng"].raw["address"]))
+    return(geocoder.reverse(activity["start_latlng"]).raw["address"],
+           geocoder.reverse(activity["end_latlng"]).raw["address"])
 
 
 def format_template(name_template, des_template, activity, weather_api):

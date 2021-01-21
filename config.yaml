@@ -11,7 +11,7 @@ name_format:
   else %}near {{ end_location.suburb }} {% endif %}"
 des_format:
   "A {{ (weather.temp - 273.15)|round(2) }} \xB0C day, with max speed of\
-  \ {{ activity.max_speed * 3.6 }} km/h"
+  \ {{ (activity.max_speed * 3.6)|round(2) }} km/h"
 
 # Create one at
 # https://openweathermap.org/api

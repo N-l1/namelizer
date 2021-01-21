@@ -28,8 +28,8 @@ class UserConfig:
         code = parse.parse_qsl(parse.urlsplit(
                 input("Please enter the return link: ")).query)[0][1]
         self.call_auth({"code": code, "grant_type": "authorization_code"})
-        return("""Success! You have been authenticated.
-               Running the script should now update any new activities.""")
+        return("Success! You have been authenticated.\n"
+               "Running the script should now update any new activities.")
 
     def refresh_auth(self):
         self.call_auth({"refresh_token": self.refresh_token,
