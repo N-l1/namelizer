@@ -17,8 +17,8 @@ class User:
         refresh_token (str): Your Strava refresh token.
         client_id (int): Your Strava APP Client ID.
         client_secret (str): Your Strava APP Client Secret.
-        last_check (int): Unix timestamp of last checked activity.
-        special_char (str): Character to check, if matched, will update name.
+        last_check (int): Unix timestamp of when last update happened.
+        special_char (str): Character to check, if matched, will update.
         name_template (str): Jinja template of your activity name.
         des_template (str): Jinja template of your activity description.
         weather_api (str): OpenWeatherMap API key.
@@ -32,7 +32,7 @@ class User:
         """
         self.__dict__.update(config_data)
 
-    def get_activities(self):
+    def get_activities(self, path="athlete/activities"):
         """
         List activities after the specified timestamp.
         Max is 30 activities.
@@ -41,7 +41,7 @@ class User:
             List of activities.
         """
         activities = requests.get(url='https://www.strava.com/'
-                                      'api/v3/athlete/activities',
+                                      f'api/v3/{path}',
                                   headers={"Authorization":
                                            f'Bearer {self.access_token}'},
                                   params={"after": self.last_check},
@@ -115,11 +115,13 @@ class User:
             Message stating authentication was successful.
         """
         self.last_check = time.time()
+        # Open browser to prompt the user to authorize
         webbrowser.open('https://www.strava.com/oauth/authorize'
                         f'?client_id={self.client_id}'
                         '&redirect_uri=http://localhost/exchange_token'
                         '&response_type=code'
                         '&scope=activity:read_all,activity:write')
+        # Parse the return link
         code = parse.parse_qsl(parse.urlsplit(
                 input("Please enter the return link: ")).query)[0][1]
         self.call_auth({"code": code, "grant_type": "authorization_code"})
@@ -133,18 +135,22 @@ class User:
         Args:
             activity: Dictionary of the activity to update.
         """
-        activity_id = activity["id"]
         new_name, new_des = self.format_template(activity)
+        update_data = {}
+        # Update either the name, description
+        # or both depending on which one was selected
+        if new_name and activity["name"][0] == self.special_char:
+            update_data["name"] = new_name
+        if new_des and activity["description"][0] == self.special_char:
+            update_data["description"] = new_des
         activity = requests.put(url="https://www.strava.com/"
-                                    f"api/v3/activities/{activity_id}",
+                                    f'api/v3/activities/{activity["id"]}',
                                 headers={"Authorization":
                                          f'Bearer {self.access_token}'},
-                                data={"name": new_name,
-                                      "description": new_des},
-                                timeout=5).json()
+                                data=update_data, timeout=5).json()
         self.last_check = int(time.mktime(time.strptime(
-                                            activity["start_date_local"],
-                                            r"%Y-%m-%dT%H:%M:%SZ")))
+                                        activity["start_date_local"],
+                                        r"%Y-%m-%dT%H:%M:%SZ")))
 
     def format_template(self, activity):
         """
@@ -157,9 +163,11 @@ class User:
             Tuple of formated versions of the name & des templates.
         """
         weather = {}
+        # Get weather data if it is used
         if (self.weather_api and ("weather" in self.name_template
            or "weather" in self.des_template)):
             weather = self.get_weather(activity)
+        # Get location data
         start_location, end_location = User.get_location(activity)
         return(tuple(Template(i).render(activity=activity,
                                         start_location=start_location,
@@ -190,7 +198,9 @@ def main():
     # If any match the specials character,
     # update the name and description
     for activity in config.get_activities():
-        if activity["name"][0] == config.special_char:
+        activity = config.get_activities(f'activities/{activity["id"]}')
+        if (activity["name"][0] == config.special_char or
+           activity["description"][0] == config.special_char):
             config.update_activity(activity)
             updated += 1
     # Store the new data in config.yaml
