@@ -1,5 +1,6 @@
 import time
 import yaml
+import pickle
 import requests
 import webbrowser
 from urllib import parse
@@ -141,7 +142,8 @@ class User:
         # or both depending on which one was selected
         if new_name and activity["name"][0] == self.special_char:
             update_data["name"] = new_name
-        if new_des and activity["description"][0] == self.special_char:
+        if (new_des and activity["description"] and
+           activity["description"][0] == self.special_char):
             update_data["description"] = new_des
         activity = requests.put(url="https://www.strava.com/"
                                     f'api/v3/activities/{activity["id"]}',
@@ -184,28 +186,35 @@ def main():
     updated = 0
     # Read the user input from config.yaml
     with open(r'config.yaml', 'r') as file:
-        config = User(yaml.load(file, Loader=yaml.FullLoader))
+        yaml_config = yaml.load(file, Loader=yaml.FullLoader)
+    try:
+        # Read data previously stored at secret.pkl
+        with open(r'secrets.pkl', "rb") as pickle_file:
+            pickle_data = pickle.load(pickle_file)
+            pickle_data.update(yaml_config)
+            config = User(pickle_data)
     # Initial authorization if it is
     # the first time the script has been run
-    if not hasattr(config, "refresh_token"):
+    except FileNotFoundError:
+        config = User(yaml_config)
         print(config.initial_auth())
     # If the access token expires,
     # refresh using refresh token
-    elif time.time() >= config.expiration:
+    if time.time() >= config.expiration:
         config.refresh_auth()
     print("Searching for new activities...")
     # Go through the most recent activities.
     # If any match the specials character,
-    # update the name and description
+    # update the name/description
     for activity in config.get_activities():
         activity = config.get_activities(f'activities/{activity["id"]}')
         if (activity["name"][0] == config.special_char or
-           activity["description"][0] == config.special_char):
+           activity.get("description")[0] == config.special_char):
             config.update_activity(activity)
             updated += 1
-    # Store the new data in config.yaml
-    with open(r'config.yaml', 'w') as file:
-        yaml.dump(config.__dict__, file)
+    # Store the new data in secret.pkl
+    with open(r'secrets.pkl', "wb") as pickle_file:
+        pickle.dump(config.__dict__, pickle_file)
     print(f"Updated {updated} activities")
 
 
