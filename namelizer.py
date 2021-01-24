@@ -209,7 +209,8 @@ def main():
     for activity in config.get_activities():
         activity = config.get_activities(f'activities/{activity["id"]}')
         if (activity["name"][0] == config.special_char or
-           activity.get("description")[0] == config.special_char):
+           (activity.get("description") and
+           activity["description"][0] == config.special_char)):
             config.update_activity(activity)
             updated += 1
     # Store the new data in secret.pkl
