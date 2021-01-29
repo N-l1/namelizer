@@ -96,9 +96,9 @@ class User:
                                    "client_secret": self.client_secret,
                                    **auth_data},
                              timeout=5).json()
-        self.access_token = auth["access_token"]
-        self.refresh_token = auth["refresh_token"]
-        self.expiration = auth["expires_at"]
+        self.__dict__.update({i: auth[i] for i in ("access_token",
+                                                   "refresh_token",
+                                                   "expires_at")})
 
     def refresh_auth(self):
         """
@@ -135,15 +135,21 @@ class User:
 
         Args:
             activity: Dictionary of the activity to update.
+
+        Returns:
+            Returns 1, indicating it has updated one activity.
         """
         new_name, new_des = self.format_template(activity)
         update_data = {}
-        # Update either the name, description
-        # or both depending on which one was selected
-        if new_name and activity["name"][0] == self.special_char:
+        # Update name if special character found in name
+        if (not hasattr(self, "special_char") or
+           (new_name and activity["name"][0] == self.special_char)):
             update_data["name"] = new_name
-        if (new_des and activity["description"] and
-           activity["description"][0] == self.special_char):
+        # Update description if special character found in description
+        # Both will be updated if special character not specified
+        if (not hasattr(self, "special_char") or
+           (new_des and activity["description"] and
+           activity["description"][0] == self.special_char)):
             update_data["description"] = new_des
         activity = requests.put(url="https://www.strava.com/"
                                     f'api/v3/activities/{activity["id"]}',
@@ -153,6 +159,7 @@ class User:
         self.last_check = int(time.mktime(time.strptime(
                                         activity["start_date_local"],
                                         r"%Y-%m-%dT%H:%M:%SZ")))
+        return 1
 
     def format_template(self, activity):
         """
@@ -164,18 +171,31 @@ class User:
         Returns:
             Tuple of formated versions of the name & des templates.
         """
-        weather = {}
-        # Get weather data if it is used
-        if (self.weather_api and ("weather" in self.name_template
-           or "weather" in self.des_template)):
+        weather = start_location = end_location = None
+        name_template, des_template = [getattr(self, i, "")
+                                       for i in ("name_template",
+                                                 "des_template")]
+        # Get weather data if used
+        if (hasattr(self, "weather_api") and
+           "weather" in name_template + des_template):
             weather = self.get_weather(activity)
-        # Get location data
-        start_location, end_location = User.get_location(activity)
+        # Get location data if used
+        print(name_template + des_template)
+        if "location" in name_template + des_template:
+            start_location, end_location = User.get_location(activity)
         return(tuple(Template(i).render(activity=activity,
                                         start_location=start_location,
                                         end_location=end_location,
                                         weather=weather)
-                     for i in (self.name_template, self.des_template)))
+                     for i in (name_template, des_template)))
+
+    def store_secrets(self):
+        # Store tokens & timestamps in secret.pkl
+        with open(r'secrets.pkl', "wb") as pickle_file:
+            pickle.dump({k: v for k, v in self.__dict__.items()
+                         if k in ("access_token", "refresh_token",
+                                  "expires_at", "last_check")},
+                        pickle_file)
 
 
 def main():
@@ -198,25 +218,28 @@ def main():
     except FileNotFoundError:
         config = User(yaml_config)
         print(config.initial_auth())
+        config.store_secrets()
+        return "Initial auth successful"
     # If the access token expires,
     # refresh using refresh token
-    if time.time() >= config.expiration:
+    if time.time() >= config.expires_at:
         config.refresh_auth()
     print("Searching for new activities...")
     # Go through the most recent activities.
-    # If any match the specials character,
-    # update the name/description
     for activity in config.get_activities():
         activity = config.get_activities(f'activities/{activity["id"]}')
-        if (activity["name"][0] == config.special_char or
-           (activity.get("description") and
-           activity["description"][0] == config.special_char)):
-            config.update_activity(activity)
-            updated += 1
-    # Store the new data in secret.pkl
-    with open(r'secrets.pkl', "wb") as pickle_file:
-        pickle.dump(config.__dict__, pickle_file)
+        # Special character not specfied, update all activities
+        if not hasattr(config, "special_char") or not config.special_char:
+            updated += config.update_activity(activity)
+        # Else if any match the special character,
+        # update the name/description
+        elif (activity["name"][0] == config.special_char or
+              (activity.get("description") and
+              activity["description"][0] == config.special_char)):
+            updated += config.update_activity(activity)
     print(f"Updated {updated} activities")
+    # Store new data
+    config.store_secrets()
 
 
 if __name__ == '__main__':
